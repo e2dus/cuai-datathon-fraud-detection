@@ -1,0 +1,1209 @@
+{
+  "experiment_summary": {
+    "한줄요약": "SEED=42 | 최고 OOF AP: CatBoost = 0.175547 (fold mean 0.176754 ± 0.005965)",
+    "seed": "42",
+    "평가지표": "Average Precision (OOF) — CV 요약의 oof_ap",
+    "무엇을_했는지": {
+      "설명": "§2: train/test CSV 로드 후 컬럼별 클립·분위수·파생 플래그·log1p 등 순차 적용. §3: age_bucket 원핫, object 범주형 원핫, 학습 피처 확정.",
+      "§2_실행로그_한줄씩": [
+        "credit_risk_score < 0 → 0 클립: Train 10,157건, Test 4,288건",
+        "yearly_income: 하위10%≤0.1, 상위10%≥0.9 (train 분위수), 원본 유지",
+        "name_email_sim: clip [0,1], name_email_low_sim=1 if ≤0.3",
+        "curr_addr_months: months→weeks(×4.333), short≤86.6667주, log1p",
+        "init_transfer_amt: <0 → 88.3366 (train 양수≥q90=52.0406 구간 평균), Train 519,585 / Test 222,938건",
+        "req_credit_limit: clip q0.5–q99.5 [200,2000], log1p",
+        "session_length_min: clip≥0 → winsor [0.435099,53.5876], log1p",
+        "days_since_req: days→weeks(/7), days_req_within_7=(원본일≤7), clip≤q99=21.9742, log1p",
+        "req_rate_6h <0 클립→×168(시간당→주당)→log1p: Tr 31 / Te 13",
+        "req_rate_24h <0 클립→×168(시간당→주당)→log1p: Tr 0 / Te 0",
+        "req_rate_4w <0 클립→×168(시간당→주당)→log1p: Tr 0 / Te 0",
+        "zip_req_count_4w: /4(주당), zip_req_gt_0, log1p",
+        "branch_req_count_8w: /8(주당), clip≥0, branch_req_gt_0, log1p",
+        "bank_months_count: -1→median, months→weeks(×4.333), missing 플래그",
+        "prev_addr_months: -1→median, months→weeks(×4.333), log1p, prev_addr_missing",
+        "dob_email_count_4w: /4(주당), z_age, hi_outlier>q99=5.75, log1p",
+        "month_idx → month_sin, month_cos (주기 8), month_idx 컬럼 제거",
+        "Train : (700000, 46)",
+        "Test  : (300000, 45)",
+        "Fraud 비율: 1.0917%  (7,642건)"
+      ],
+      "§3_실행로그_한줄씩": [
+        "age_bucket 원-핫: 9컬럼 ['age_bkt_10', 'age_bkt_20', 'age_bkt_30', 'age_bkt_40', 'age_bkt_50', 'age_bkt_60', 'age_bkt_70', 'age_bkt_80', 'age_bkt_90']",
+        "범주형 컬럼: ['payment_type', 'employment_status', 'housing_status', 'application_source', 'device_os']",
+        "범주형 원-핫: 26컬럼",
+        "피처 수: 72 (제외: ['device_fraud_history'])"
+      ],
+      "§2_코드에서_정한_상수_및_식": {
+        "_WPM": "52.0 / 12.0",
+        "_HPW": "24.0 * 7.0",
+        "CRS": "'credit_risk_score'",
+        "n_tr": "int((train[CRS] < 0).sum())",
+        "n_te": "int((test[CRS] < 0).sum())",
+        "HPH": "'is_home_phone_valid'",
+        "YI": "'yearly_income'",
+        "_q10": "train[YI].quantile(0.1)",
+        "_q90": "train[YI].quantile(0.9)",
+        "NES": "'name_email_sim'",
+        "_th_sim": "0.3",
+        "CAM": "'curr_addr_months'",
+        "_cam_med": "train.loc[train[CAM] != -1, CAM].median()",
+        "_cam_hi": "float(train[CAM].quantile(0.99))",
+        "_cam_cut": "float(train[CAM].quantile(0.25))",
+        "ITA": "'init_transfer_amt'",
+        "_pos": "train.loc[train[ITA] > 0, ITA]",
+        "_q90p": "_pos.quantile(0.9)",
+        "_large_mean": "train.loc[train[ITA] >= _q90p, ITA].mean()",
+        "_n_tr": "int((train[ITA] < 0).sum())",
+        "_n_te": "int((test[ITA] < 0).sum())",
+        "RCL": "'req_credit_limit'",
+        "_rlo": "float(train[RCL].quantile(0.005))",
+        "_rhi": "float(train[RCL].quantile(0.995))",
+        "SLM": "'session_length_min'",
+        "_sl_lo": "float(train[SLM].quantile(0.005))",
+        "_sl_hi": "float(train[SLM].quantile(0.995))",
+        "DSR": "'days_since_req'",
+        "_dsr_hi": "float(train[DSR].quantile(0.99))",
+        "ZIP": "'zip_req_count_4w'",
+        "BR": "'branch_req_count_8w'",
+        "BMC": "'bank_months_count'",
+        "bm_median": "train.loc[train[BMC] != -1, BMC].median()",
+        "PAM": "'prev_addr_months'",
+        "pam_median": "train.loc[train[PAM] != -1, PAM].median()",
+        "DEC": "'dob_email_count_4w'",
+        "AB": "'age_bucket'",
+        "_gm": "float(train[DEC].mean())",
+        "_gs": "max(float(train[DEC].std()), 1e-06)",
+        "_d99": "float(train[DEC].quantile(0.99))",
+        "_nm": "8"
+      },
+      "§3_코드에서_정한_상수": {
+        "TARGET": "'fraud_bool'",
+        "DROP_COLS": "['id', TARGET]",
+        "DROP_FEATURES": "['device_fraud_history']",
+        "AGE": "'age_bucket'",
+        "DROP_COLS_해석": "['id', 'fraud_bool']"
+      }
+    },
+    "검증_성능_OOF_AP_내림차순": [
+      {
+        "model": "CatBoost",
+        "OOF_AP": 0.175547,
+        "CV_fold_mean_AP": 0.176754,
+        "CV_fold_std_AP": 0.005965
+      },
+      {
+        "model": "HistGradientBoosting",
+        "OOF_AP": 0.162757,
+        "CV_fold_mean_AP": 0.163503,
+        "CV_fold_std_AP": 0.00874
+      },
+      {
+        "model": "XGBoost",
+        "OOF_AP": 0.162616,
+        "CV_fold_mean_AP": 0.163276,
+        "CV_fold_std_AP": 0.006833
+      },
+      {
+        "model": "LightGBM",
+        "OOF_AP": 0.15838,
+        "CV_fold_mean_AP": 0.158911,
+        "CV_fold_std_AP": 0.008355
+      },
+      {
+        "model": "Linear_SGD",
+        "OOF_AP": 0.107822,
+        "CV_fold_mean_AP": 0.109654,
+        "CV_fold_std_AP": 0.00697
+      }
+    ],
+    "최고_모델": {
+      "model": "CatBoost",
+      "OOF_AP": 0.175547,
+      "CV_fold_mean_AP": 0.176754,
+      "CV_fold_std_AP": 0.005965
+    },
+    "모델_및_튜닝_설정_블록별": {
+      "CV_설정": {
+        "N_SPLITS": "5",
+        "_scale_pos": "float((y == 0).sum() / (y == 1).sum())"
+      },
+      "Optuna_튜닝_설정": {
+        "TUNE_N_ROWS": "120000",
+        "TUNE_CV": "3",
+        "N_TRIALS": "25",
+        "CATBOOST_ITER": "2000"
+      },
+      "Optuna_실행결과": {
+        "Best_mean_AP_튜닝셋": "0.16371"
+      },
+      "XGBoost": {
+        "objective": "'binary:logistic'",
+        "eval_metric": "'aucpr'",
+        "learning_rate": "0.05",
+        "max_depth": "8",
+        "min_child_weight": "50",
+        "subsample": "0.8",
+        "colsample_bytree": "0.8",
+        "reg_alpha": "0.1",
+        "reg_lambda": "0.1",
+        "scale_pos_weight": "_scale_pos",
+        "n_estimators": "1000",
+        "random_state": "SEED",
+        "tree_method": "'hist'",
+        "n_jobs": "-1",
+        "early_stopping_rounds": "50"
+      },
+      "LightGBM": {
+        "objective": "'binary'",
+        "metric": "'average_precision'",
+        "learning_rate": "0.05",
+        "num_leaves": "63",
+        "max_depth": "-1",
+        "min_child_samples": "50",
+        "feature_fraction": "0.8",
+        "bagging_fraction": "0.8",
+        "bagging_freq": "5",
+        "reg_alpha": "0.1",
+        "reg_lambda": "0.1",
+        "scale_pos_weight": "_scale_pos",
+        "random_state": "SEED",
+        "verbose": "-1"
+      },
+      "LightGBM_train": {
+        "num_boost_round": "1000"
+      },
+      "HistGradientBoosting": {
+        "loss": "'log_loss'",
+        "learning_rate": "0.05",
+        "max_depth": "8",
+        "max_iter": "400",
+        "max_leaf_nodes": "63",
+        "min_samples_leaf": "50",
+        "l2_regularization": "0.1",
+        "class_weight": "'balanced'",
+        "random_state": "SEED"
+      },
+      "Linear_SGD": {
+        "loss": "'log_loss'",
+        "class_weight": "'balanced'",
+        "random_state": "SEED",
+        "max_iter": "2000",
+        "tol": "0.001"
+      },
+      "Optuna_best_trial": {
+        "learning_rate": "0.040331443383617174",
+        "depth": "4",
+        "l2_leaf_reg": "8.234548958371454",
+        "random_strength": "0.514960710230099",
+        "border_count": "87",
+        "subsample": "0.8233119185389446"
+      },
+      "CatBoost_최종추정_튜닝후": {
+        "iterations": "2000",
+        "learning_rate": "0.040331443383617174",
+        "depth": "4",
+        "l2_leaf_reg": "8.234548958371454",
+        "random_strength": "0.514960710230099",
+        "border_count": "87",
+        "subsample": "0.8233119185389446",
+        "bootstrap_type": "Bernoulli",
+        "loss_function": "Logloss",
+        "eval_metric": "PRAUC",
+        "random_seed": "42",
+        "early_stopping_rounds": "50",
+        "auto_class_weights": "Balanced",
+        "verbose": "False"
+      },
+      "CatBoost_기본_else분기": {
+        "iterations": "1000",
+        "learning_rate": "0.05",
+        "depth": "8",
+        "l2_leaf_reg": "10",
+        "loss_function": "'Logloss'",
+        "eval_metric": "'PRAUC'",
+        "random_seed": "SEED",
+        "early_stopping_rounds": "50",
+        "auto_class_weights": "'Balanced'",
+        "verbose": "False"
+      }
+    }
+  },
+  "meta": [
+    {
+      "항목": "노트북",
+      "내용": "baseline.ipynb"
+    },
+    {
+      "항목": "생성",
+      "내용": "2026-03-22 01:40:00"
+    },
+    {
+      "항목": "시트_하이퍼파라미터_표",
+      "내용": "§2·§3 전처리(AST+출력) + §4·Optuna + 실행 스냅샷"
+    },
+    {
+      "항목": "§2 셀",
+      "내용": "4"
+    },
+    {
+      "항목": "§3 셀",
+      "내용": "6"
+    },
+    {
+      "항목": "§4 셀",
+      "내용": "8"
+    },
+    {
+      "항목": "§4-b 셀",
+      "내용": "10"
+    },
+    {
+      "항목": "§4-c 셀",
+      "내용": "12"
+    },
+    {
+      "항목": "JSON",
+      "내용": "baseline_run_hyperparams.json"
+    }
+  ],
+  "hyperparams_flat": [
+    {
+      "블록": "공통",
+      "이름": "SEED",
+      "값": "42",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_WPM",
+      "값": "52.0 / 12.0",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_HPW",
+      "값": "24.0 * 7.0",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "CRS",
+      "값": "'credit_risk_score'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "n_tr",
+      "값": "int((train[CRS] < 0).sum())",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "n_te",
+      "값": "int((test[CRS] < 0).sum())",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "HPH",
+      "값": "'is_home_phone_valid'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "YI",
+      "값": "'yearly_income'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_q10",
+      "값": "train[YI].quantile(0.1)",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_q90",
+      "값": "train[YI].quantile(0.9)",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "NES",
+      "값": "'name_email_sim'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_th_sim",
+      "값": "0.3",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "CAM",
+      "값": "'curr_addr_months'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_cam_med",
+      "값": "train.loc[train[CAM] != -1, CAM].median()",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_cam_hi",
+      "값": "float(train[CAM].quantile(0.99))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_cam_cut",
+      "값": "float(train[CAM].quantile(0.25))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "ITA",
+      "값": "'init_transfer_amt'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_pos",
+      "값": "train.loc[train[ITA] > 0, ITA]",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_q90p",
+      "값": "_pos.quantile(0.9)",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_large_mean",
+      "값": "train.loc[train[ITA] >= _q90p, ITA].mean()",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_n_tr",
+      "값": "int((train[ITA] < 0).sum())",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_n_te",
+      "값": "int((test[ITA] < 0).sum())",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "RCL",
+      "값": "'req_credit_limit'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_rlo",
+      "값": "float(train[RCL].quantile(0.005))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_rhi",
+      "값": "float(train[RCL].quantile(0.995))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "SLM",
+      "값": "'session_length_min'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_sl_lo",
+      "값": "float(train[SLM].quantile(0.005))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_sl_hi",
+      "값": "float(train[SLM].quantile(0.995))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "DSR",
+      "값": "'days_since_req'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_dsr_hi",
+      "값": "float(train[DSR].quantile(0.99))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "ZIP",
+      "값": "'zip_req_count_4w'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "BR",
+      "값": "'branch_req_count_8w'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "BMC",
+      "값": "'bank_months_count'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "bm_median",
+      "값": "train.loc[train[BMC] != -1, BMC].median()",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "PAM",
+      "값": "'prev_addr_months'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "pam_median",
+      "값": "train.loc[train[PAM] != -1, PAM].median()",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "DEC",
+      "값": "'dob_email_count_4w'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "AB",
+      "값": "'age_bucket'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_gm",
+      "값": "float(train[DEC].mean())",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_gs",
+      "값": "max(float(train[DEC].std()), 1e-06)",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_d99",
+      "값": "float(train[DEC].quantile(0.99))",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_코드상수",
+      "이름": "_nm",
+      "값": "8",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_001",
+      "값": "credit_risk_score < 0 → 0 클립: Train 10,157건, Test 4,288건",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_002",
+      "값": "yearly_income: 하위10%≤0.1, 상위10%≥0.9 (train 분위수), 원본 유지",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_003",
+      "값": "name_email_sim: clip [0,1], name_email_low_sim=1 if ≤0.3",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_004",
+      "값": "curr_addr_months: months→weeks(×4.333), short≤86.6667주, log1p",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_005",
+      "값": "init_transfer_amt: <0 → 88.3366 (train 양수≥q90=52.0406 구간 평균), Train 519,585 / Test 222,938건",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_006",
+      "값": "req_credit_limit: clip q0.5–q99.5 [200,2000], log1p",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_007",
+      "값": "session_length_min: clip≥0 → winsor [0.435099,53.5876], log1p",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_008",
+      "값": "days_since_req: days→weeks(/7), days_req_within_7=(원본일≤7), clip≤q99=21.9742, log1p",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_009",
+      "값": "req_rate_6h <0 클립→×168(시간당→주당)→log1p: Tr 31 / Te 13",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_010",
+      "값": "req_rate_24h <0 클립→×168(시간당→주당)→log1p: Tr 0 / Te 0",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_011",
+      "값": "req_rate_4w <0 클립→×168(시간당→주당)→log1p: Tr 0 / Te 0",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_012",
+      "값": "zip_req_count_4w: /4(주당), zip_req_gt_0, log1p",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_013",
+      "값": "branch_req_count_8w: /8(주당), clip≥0, branch_req_gt_0, log1p",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_014",
+      "값": "bank_months_count: -1→median, months→weeks(×4.333), missing 플래그",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_015",
+      "값": "prev_addr_months: -1→median, months→weeks(×4.333), log1p, prev_addr_missing",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_016",
+      "값": "dob_email_count_4w: /4(주당), z_age, hi_outlier>q99=5.75, log1p",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_017",
+      "값": "month_idx → month_sin, month_cos (주기 8), month_idx 컬럼 제거",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_018",
+      "값": "Train : (700000, 46)",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_019",
+      "값": "Test  : (300000, 45)",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§2_실행출력",
+      "이름": "stdout_020",
+      "값": "Fraud 비율: 1.0917%  (7,642건)",
+      "출처": "§2_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§3_코드상수",
+      "이름": "TARGET",
+      "값": "'fraud_bool'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§3_코드상수",
+      "이름": "DROP_COLS",
+      "값": "['id', TARGET]",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§3_코드상수",
+      "이름": "DROP_FEATURES",
+      "값": "['device_fraud_history']",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§3_코드상수",
+      "이름": "AGE",
+      "값": "'age_bucket'",
+      "출처": "코드"
+    },
+    {
+      "블록": "전처리_§3_실행출력",
+      "이름": "stdout_001",
+      "값": "age_bucket 원-핫: 9컬럼 ['age_bkt_10', 'age_bkt_20', 'age_bkt_30', 'age_bkt_40', 'age_bkt_50', 'age_bkt_60', 'age_bkt_70', 'age_bkt_80', 'age_bkt_90']",
+      "출처": "§3_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§3_실행출력",
+      "이름": "stdout_002",
+      "값": "범주형 컬럼: ['payment_type', 'employment_status', 'housing_status', 'application_source', 'device_os']",
+      "출처": "§3_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§3_실행출력",
+      "이름": "stdout_003",
+      "값": "범주형 원-핫: 26컬럼",
+      "출처": "§3_노트북_저장_출력"
+    },
+    {
+      "블록": "전처리_§3_실행출력",
+      "이름": "stdout_004",
+      "값": "피처 수: 72 (제외: ['device_fraud_history'])",
+      "출처": "§3_노트북_저장_출력"
+    },
+    {
+      "블록": "CV_설정",
+      "이름": "N_SPLITS",
+      "값": "5",
+      "출처": "코드"
+    },
+    {
+      "블록": "CV_설정",
+      "이름": "_scale_pos",
+      "값": "float((y == 0).sum() / (y == 1).sum())",
+      "출처": "코드(실행 시 계산)"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "objective",
+      "값": "'binary:logistic'",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "eval_metric",
+      "값": "'aucpr'",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "learning_rate",
+      "값": "0.05",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "max_depth",
+      "값": "8",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "min_child_weight",
+      "값": "50",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "subsample",
+      "값": "0.8",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "colsample_bytree",
+      "값": "0.8",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "reg_alpha",
+      "값": "0.1",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "reg_lambda",
+      "값": "0.1",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "scale_pos_weight",
+      "값": "_scale_pos",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "n_estimators",
+      "값": "1000",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "random_state",
+      "값": "SEED",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "tree_method",
+      "값": "'hist'",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "n_jobs",
+      "값": "-1",
+      "출처": "코드"
+    },
+    {
+      "블록": "XGBoost",
+      "이름": "early_stopping_rounds",
+      "값": "50",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "objective",
+      "값": "'binary'",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "metric",
+      "값": "'average_precision'",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "learning_rate",
+      "값": "0.05",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "num_leaves",
+      "값": "63",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "max_depth",
+      "값": "-1",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "min_child_samples",
+      "값": "50",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "feature_fraction",
+      "값": "0.8",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "bagging_fraction",
+      "값": "0.8",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "bagging_freq",
+      "값": "5",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "reg_alpha",
+      "값": "0.1",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "reg_lambda",
+      "값": "0.1",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "scale_pos_weight",
+      "값": "_scale_pos",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "random_state",
+      "값": "SEED",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM",
+      "이름": "verbose",
+      "값": "-1",
+      "출처": "코드"
+    },
+    {
+      "블록": "LightGBM_train",
+      "이름": "num_boost_round",
+      "값": "1000",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "loss",
+      "값": "'log_loss'",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "learning_rate",
+      "값": "0.05",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "max_depth",
+      "값": "8",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "max_iter",
+      "값": "400",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "max_leaf_nodes",
+      "값": "63",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "min_samples_leaf",
+      "값": "50",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "l2_regularization",
+      "값": "0.1",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "class_weight",
+      "값": "'balanced'",
+      "출처": "코드"
+    },
+    {
+      "블록": "HistGradientBoosting",
+      "이름": "random_state",
+      "값": "SEED",
+      "출처": "코드"
+    },
+    {
+      "블록": "Linear_SGD",
+      "이름": "loss",
+      "값": "'log_loss'",
+      "출처": "코드"
+    },
+    {
+      "블록": "Linear_SGD",
+      "이름": "class_weight",
+      "값": "'balanced'",
+      "출처": "코드"
+    },
+    {
+      "블록": "Linear_SGD",
+      "이름": "random_state",
+      "값": "SEED",
+      "출처": "코드"
+    },
+    {
+      "블록": "Linear_SGD",
+      "이름": "max_iter",
+      "값": "2000",
+      "출처": "코드"
+    },
+    {
+      "블록": "Linear_SGD",
+      "이름": "tol",
+      "값": "0.001",
+      "출처": "코드"
+    },
+    {
+      "블록": "Optuna_튜닝_설정",
+      "이름": "TUNE_N_ROWS",
+      "값": "120000",
+      "출처": "코드"
+    },
+    {
+      "블록": "Optuna_튜닝_설정",
+      "이름": "TUNE_CV",
+      "값": "3",
+      "출처": "코드"
+    },
+    {
+      "블록": "Optuna_튜닝_설정",
+      "이름": "N_TRIALS",
+      "값": "25",
+      "출처": "코드"
+    },
+    {
+      "블록": "Optuna_튜닝_설정",
+      "이름": "CATBOOST_ITER",
+      "값": "2000",
+      "출처": "코드"
+    },
+    {
+      "블록": "Optuna_실행결과",
+      "이름": "Best_mean_AP_튜닝셋",
+      "값": "0.16371",
+      "출처": "노트북_저장_출력"
+    },
+    {
+      "블록": "Optuna_best_trial",
+      "이름": "learning_rate",
+      "값": "0.040331443383617174",
+      "출처": "노트북_저장_출력"
+    },
+    {
+      "블록": "Optuna_best_trial",
+      "이름": "depth",
+      "값": "4",
+      "출처": "노트북_저장_출력"
+    },
+    {
+      "블록": "Optuna_best_trial",
+      "이름": "l2_leaf_reg",
+      "값": "8.234548958371454",
+      "출처": "노트북_저장_출력"
+    },
+    {
+      "블록": "Optuna_best_trial",
+      "이름": "random_strength",
+      "값": "0.514960710230099",
+      "출처": "노트북_저장_출력"
+    },
+    {
+      "블록": "Optuna_best_trial",
+      "이름": "border_count",
+      "값": "87",
+      "출처": "노트북_저장_출력"
+    },
+    {
+      "블록": "Optuna_best_trial",
+      "이름": "subsample",
+      "값": "0.8233119185389446",
+      "출처": "노트북_저장_출력"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "iterations",
+      "값": "2000",
+      "출처": "코드_CATBOOST_ITER"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "learning_rate",
+      "값": "0.040331443383617174",
+      "출처": "노트북_출력_best_trial"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "depth",
+      "값": "4",
+      "출처": "노트북_출력_best_trial"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "l2_leaf_reg",
+      "값": "8.234548958371454",
+      "출처": "노트북_출력_best_trial"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "random_strength",
+      "값": "0.514960710230099",
+      "출처": "노트북_출력_best_trial"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "border_count",
+      "값": "87",
+      "출처": "노트북_출력_best_trial"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "subsample",
+      "값": "0.8233119185389446",
+      "출처": "노트북_출력_best_trial"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "bootstrap_type",
+      "값": "Bernoulli",
+      "출처": "코드_고정"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "loss_function",
+      "값": "Logloss",
+      "출처": "코드_고정"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "eval_metric",
+      "값": "PRAUC",
+      "출처": "코드_고정"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "random_seed",
+      "값": "42",
+      "출처": "코드_고정"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "early_stopping_rounds",
+      "값": "50",
+      "출처": "코드_고정"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "auto_class_weights",
+      "값": "Balanced",
+      "출처": "코드_고정"
+    },
+    {
+      "블록": "CatBoost_최종추정_튜닝후",
+      "이름": "verbose",
+      "값": "False",
+      "출처": "코드_고정"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "iterations",
+      "값": "1000",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "learning_rate",
+      "값": "0.05",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "depth",
+      "값": "8",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "l2_leaf_reg",
+      "값": "10",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "loss_function",
+      "값": "'Logloss'",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "eval_metric",
+      "값": "'PRAUC'",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "random_seed",
+      "값": "SEED",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "early_stopping_rounds",
+      "값": "50",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "auto_class_weights",
+      "값": "'Balanced'",
+      "출처": "코드_튜닝없을때"
+    },
+    {
+      "블록": "CatBoost_기본_else분기",
+      "이름": "verbose",
+      "값": "False",
+      "출처": "코드_튜닝없을때"
+    }
+  ],
+  "cv_performance": [
+    {
+      "model": "CatBoost",
+      "OOF_AP": 0.175547,
+      "CV_fold_mean_AP": 0.176754,
+      "CV_fold_std_AP": 0.005965
+    },
+    {
+      "model": "HistGradientBoosting",
+      "OOF_AP": 0.162757,
+      "CV_fold_mean_AP": 0.163503,
+      "CV_fold_std_AP": 0.00874
+    },
+    {
+      "model": "XGBoost",
+      "OOF_AP": 0.162616,
+      "CV_fold_mean_AP": 0.163276,
+      "CV_fold_std_AP": 0.006833
+    },
+    {
+      "model": "LightGBM",
+      "OOF_AP": 0.15838,
+      "CV_fold_mean_AP": 0.158911,
+      "CV_fold_std_AP": 0.008355
+    },
+    {
+      "model": "Linear_SGD",
+      "OOF_AP": 0.107822,
+      "CV_fold_mean_AP": 0.109654,
+      "CV_fold_std_AP": 0.00697
+    }
+  ]
+}

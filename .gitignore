@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+catboost_info/
+*.joblib
+*.pkl
+train.csv
+test.csv
+sample_submission.csv
+submission*.csv
+*_features.csv
+.venv/
+venv/
+.DS_Store
+Thumbs.db

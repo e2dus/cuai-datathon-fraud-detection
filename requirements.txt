@@ -1,0 +1,6 @@
+# run_experiment_grid.py / cuai_pipeline 실험용
+pandas
+numpy
+scipy
+scikit-learn
+xgboost>=2.0

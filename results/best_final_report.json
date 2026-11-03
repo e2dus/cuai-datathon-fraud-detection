@@ -1,0 +1,66 @@
+{
+  "seed": 42,
+  "scores": {
+    "xgb_oof_ap": 0.17333505896817,
+    "rf_oof_ap": 0.1393310681750002,
+    "cat_oof_ap": 0.17564615285223725,
+    "ensemble_oof_ap": 0.17576226365760012
+  },
+  "ensemble_weights": {
+    "xgb": 0.17506935047787117,
+    "rf": 0.0005035297271419805,
+    "cat": 0.8244271197941567
+  },
+  "best_params": {
+    "xgb": {
+      "learning_rate": 0.02529907534567891,
+      "max_depth": 3,
+      "n_estimators": 765,
+      "min_child_weight": 12,
+      "subsample": 0.6171407948975183,
+      "colsample_bytree": 0.7650052447528517,
+      "reg_alpha": 0.22414533128721698,
+      "reg_lambda": 0.000286617775801367,
+      "objective": "binary:logistic",
+      "eval_metric": "aucpr",
+      "scale_pos_weight": 90.59905783826224,
+      "random_state": 42,
+      "n_jobs": -1,
+      "tree_method": "hist"
+    },
+    "rf": {
+      "n_estimators": 574,
+      "max_depth": 29,
+      "min_samples_split": 23,
+      "min_samples_leaf": 12,
+      "max_features": "sqrt",
+      "bootstrap": true,
+      "class_weight": "balanced",
+      "random_state": 42,
+      "n_jobs": -1
+    },
+    "cat": {
+      "iterations": 2000,
+      "learning_rate": 0.040331443383617174,
+      "depth": 4,
+      "l2_leaf_reg": 8.234548958371454,
+      "random_strength": 0.514960710230099,
+      "border_count": 87,
+      "subsample": 0.8233119185389446,
+      "bootstrap_type": "Bernoulli",
+      "loss_function": "Logloss",
+      "eval_metric": "PRAUC",
+      "random_seed": 42,
+      "early_stopping_rounds": 50,
+      "auto_class_weights": "Balanced",
+      "verbose": false
+    }
+  },
+  "files": {
+    "submission": "submission_best_final_ensemble.csv",
+    "xgb_model": "best_final_xgb.joblib",
+    "rf_model": "best_final_rf.joblib",
+    "cat_model": "best_final_catboost.joblib",
+    "preprocess_meta": "best_final_preprocess_meta.json"
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "seed": 42,
+  "target_ratio": 0.010917142857142858,
+  "n_features": 105,
+  "scores": {
+    "lgb_ap": 0.17190968999381076,
+    "xgb_ap": 0.17546438380994644,
+    "cat_ap": 0.1765512703412906,
+    "ens_ap": 0.17689783645435952,
+    "lgb_auc": 0.8957394261767655,
+    "xgb_auc": 0.8978576981191954,
+    "cat_auc": 0.8986012497392941,
+    "ens_auc": 0.898718536267216
+  },
+  "ensemble_weights": {
+    "lgb": 0.0014003114466610944,
+    "xgb": 0.276123996932849,
+    "cat": 0.7224756916196919
+  },
+  "best_params": {
+    "lgb": {
+      "objective": "binary",
+      "metric": "average_precision",
+      "learning_rate": 0.017442857894326952,
+      "num_leaves": 146,
+      "max_depth": 2,
+      "min_child_samples": 10,
+      "feature_fraction": 0.7820006442886807,
+      "bagging_fraction": 0.7102806714210247,
+      "bagging_freq": 6,
+      "reg_alpha": 0.005102117718947747,
+      "reg_lambda": 0.007049146416643206,
+      "scale_pos_weight": 90.59905783826224,
+      "n_estimators": 1200,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": -1
+    },
+    "xgb": {
+      "objective": "binary:logistic",
+      "eval_metric": "aucpr",
+      "learning_rate": 0.020471986048315342,
+      "max_depth": 3,
+      "n_estimators": 1215,
+      "min_child_weight": 8,
+      "subsample": 0.6273251617739808,
+      "colsample_bytree": 0.9112713371616585,
+      "reg_alpha": 1.4359124369683893,
+      "reg_lambda": 0.00011035517402844452,
+      "scale_pos_weight": 90.59905783826224,
+      "random_state": 42,
+      "n_jobs": -1,
+      "tree_method": "hist"
+    },
+    "cat": {
+      "iterations": 2000,
+      "learning_rate": 0.040331443383617174,
+      "depth": 4,
+      "l2_leaf_reg": 8.234548958371454,
+      "random_strength": 0.514960710230099,
+      "border_count": 87,
+      "subsample": 0.8233119185389446,
+      "bootstrap_type": "Bernoulli",
+      "loss_function": "Logloss",
+      "eval_metric": "PRAUC",
+      "random_seed": 42,
+      "auto_class_weights": "Balanced",
+      "early_stopping_rounds": 80,
+      "verbose": false
+    }
+  },
+  "optuna_best_values": {
+    "lgb": null,
+    "xgb": null,
+    "cat": null,
+    "ensemble": 0.17689783645435952
+  },
+  "files": {
+    "submission": "submission_fraud_ensemble_same_preprocess.csv",
+    "lgb_model": "fraud_sameprep_lgb_model.joblib",
+    "xgb_model": "fraud_sameprep_xgb_model.joblib",
+    "cat_model": "fraud_sameprep_cat_model.joblib"
+  }
+}
